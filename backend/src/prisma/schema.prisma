@@ -1,0 +1,257 @@
+// backend/src/prisma/schema.prisma
+// Banco de dados relacional do Agendô
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────
+
+enum Perfil {
+  PACIENTE
+  PROFISSIONAL
+}
+
+enum Especialidade {
+  PSICOLOGIA_CLINICA
+  PSIQUIATRIA
+  TCC
+  PSICANALISE
+  FAMILIAR
+  INFANTIL
+}
+
+enum DiaSemana {
+  DOMINGO
+  SEGUNDA
+  TERCA
+  QUARTA
+  QUINTA
+  SEXTA
+  SABADO
+}
+
+enum StatusAgendamento {
+  PENDENTE
+  CONFIRMADO
+  REALIZADO
+  CANCELADO
+  REMARCADO
+}
+
+enum TipoSessao {
+  AVALIACAO_INICIAL
+  ACOMPANHAMENTO
+  TCC
+  PSICANALISE
+}
+
+enum StatusPagamento {
+  PENDENTE
+  APROVADO
+  RECUSADO
+  ESTORNADO
+}
+
+enum MetodoPagamento {
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  PIX
+  CONVENIO
+}
+
+enum CanalNotificacao {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum StatusNotificacao {
+  AGENDADA
+  ENVIADA
+  FALHOU
+}
+
+// ─────────────────────────────────────────
+// Entidades principais
+// ─────────────────────────────────────────
+
+model Usuario {
+  id           String   @id @default(uuid())
+  nome         String
+  email        String   @unique
+  senhaHash    String   @map("senha_hash")
+  telefone     String?
+  cpf          String   @unique
+  perfil       Perfil
+  emailVerificado Boolean @default(false) @map("email_verificado")
+  fotoPerfil   String?  @map("foto_perfil")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  paciente      Paciente?
+  profissional  Profissional?
+  notificacoes  Notificacao[]
+  refreshTokens RefreshToken[]
+
+  @@map("usuarios")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  usuarioId String   @map("usuario_id")
+  expiresAt DateTime @map("expires_at")
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Paciente {
+  id               String   @id @default(uuid())
+  usuarioId        String   @unique @map("usuario_id")
+  dataNascimento   DateTime? @map("data_nascimento")
+  planoSaude       String?  @map("plano_saude")
+  numeroCarteirinha String?  @map("numero_carteirinha")
+  observacoes      String?
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  usuario       Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  agendamentos  Agendamento[]
+  pagamentos    Pagamento[]
+  prontuarios   Prontuario[]
+  avaliacoes    Avaliacao[]
+
+  @@map("pacientes")
+}
+
+model Profissional {
+  id              String        @id @default(uuid())
+  usuarioId       String        @unique @map("usuario_id")
+  crp             String        @unique
+  especialidade   Especialidade
+  valorSessao     Decimal       @map("valor_sessao") @db.Decimal(10, 2)
+  duracaoPadrao   Int           @default(50) @map("duracao_padrao_min")
+  bio             String?
+  ativo           Boolean       @default(true)
+  criadoEm        DateTime      @default(now()) @map("criado_em")
+
+  usuario          Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  disponibilidades Disponibilidade[]
+  agendamentos     Agendamento[]
+  prontuarios      Prontuario[]
+  avaliacoes       Avaliacao[]
+
+  @@map("profissionais")
+}
+
+model Disponibilidade {
+  id              String    @id @default(uuid())
+  profissionalId  String    @map("profissional_id")
+  diaSemana       DiaSemana @map("dia_semana")
+  horaInicio      String    @map("hora_inicio") // "08:00"
+  horaFim         String    @map("hora_fim")    // "18:00"
+  ativo           Boolean   @default(true)
+
+  profissional Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade)
+
+  @@map("disponibilidades")
+}
+
+model Agendamento {
+  id              String            @id @default(uuid())
+  pacienteId      String            @map("paciente_id")
+  profissionalId  String            @map("profissional_id")
+  pagamentoId     String?           @unique @map("pagamento_id")
+  dataHora        DateTime          @map("data_hora")
+  duracaoMin      Int               @default(50) @map("duracao_min")
+  status          StatusAgendamento @default(PENDENTE)
+  tipoSessao      TipoSessao        @map("tipo_sessao")
+  observacoes     String?
+  criadoEm        DateTime          @default(now()) @map("criado_em")
+  atualizadoEm    DateTime          @updatedAt @map("atualizado_em")
+
+  paciente      Paciente      @relation(fields: [pacienteId], references: [id])
+  profissional  Profissional  @relation(fields: [profissionalId], references: [id])
+  pagamento     Pagamento?    @relation(fields: [pagamentoId], references: [id])
+  prontuario    Prontuario?
+  notificacoes  Notificacao[]
+  avaliacao     Avaliacao?
+
+  @@map("agendamentos")
+}
+
+model Prontuario {
+  id              String   @id @default(uuid())
+  agendamentoId   String   @unique @map("agendamento_id")
+  profissionalId  String   @map("profissional_id")
+  pacienteId      String   @map("paciente_id")
+  anotacoes       String?
+  cid             String?
+  lembretes       String?
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  agendamento  Agendamento  @relation(fields: [agendamentoId], references: [id])
+  profissional Profissional @relation(fields: [profissionalId], references: [id])
+  paciente     Paciente     @relation(fields: [pacienteId], references: [id])
+
+  @@map("prontuarios")
+}
+
+model Pagamento {
+  id          String          @id @default(uuid())
+  pacienteId  String          @map("paciente_id")
+  valor       Decimal         @db.Decimal(10, 2)
+  metodo      MetodoPagamento
+  status      StatusPagamento @default(PENDENTE)
+  gatewayId   String?         @map("gateway_id")
+  pagoEm      DateTime?       @map("pago_em")
+  criadoEm    DateTime        @default(now()) @map("criado_em")
+
+  paciente    Paciente     @relation(fields: [pacienteId], references: [id])
+  agendamento Agendamento?
+
+  @@map("pagamentos")
+}
+
+model Notificacao {
+  id              String            @id @default(uuid())
+  usuarioId       String            @map("usuario_id")
+  agendamentoId   String?           @map("agendamento_id")
+  tipo            String
+  canal           CanalNotificacao
+  status          StatusNotificacao @default(AGENDADA)
+  agendadoPara    DateTime          @map("agendado_para")
+  enviadoEm       DateTime?         @map("enviado_em")
+
+  usuario     Usuario      @relation(fields: [usuarioId], references: [id])
+  agendamento Agendamento? @relation(fields: [agendamentoId], references: [id])
+
+  @@map("notificacoes")
+}
+
+model Avaliacao {
+  id              String   @id @default(uuid())
+  agendamentoId   String   @unique @map("agendamento_id")
+  pacienteId      String   @map("paciente_id")
+  profissionalId  String   @map("profissional_id")
+  nota            Int      // 1 a 5
+  comentario      String?
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  agendamento  Agendamento  @relation(fields: [agendamentoId], references: [id])
+  paciente     Paciente     @relation(fields: [pacienteId], references: [id])
+  profissional Profissional @relation(fields: [profissionalId], references: [id])
+
+  @@map("avaliacoes")
+}
