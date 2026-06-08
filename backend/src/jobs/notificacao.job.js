@@ -4,10 +4,9 @@
 const { Queue, Worker } = require('bullmq')
 const { prisma } = require('../prisma/client')
 
-const redisConnection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379
-}
+const redisConnection = process.env.REDIS_URL
+  ? { url: process.env.REDIS_URL }
+  : { host: 'localhost', port: 6379 }
 
 const notificacaoQueue = new Queue('notificacoes', { connection: redisConnection })
 
